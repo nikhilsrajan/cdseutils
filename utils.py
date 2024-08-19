@@ -45,7 +45,7 @@ def fetch_catalog_single_bbox(
 ):
     # Doing this manually here so that the cache foldername is consistent.
     # This is anyway being done by catalog.search (see docs for sentinelhub.SentinelHubCatalog.search)
-    if bbox and bbox.crs is not sentinelhub.CRS.WGS84:
+    if bbox.crs is not sentinelhub.CRS.WGS84:
         bbox = bbox.transform_bounds(sentinelhub.CRS.WGS84)
 
     save_catalog_filepath = None
@@ -544,4 +544,7 @@ def get_bboxes(
         sentinelhub.BBox(geom.bounds, crs=reduced_shapes_gdf.crs)
         for geom in reduced_shapes_gdf['geometry']
     ]
+
+    bboxes = _get_unique_bboxes(bboxes=bboxes)
+
     return bboxes
