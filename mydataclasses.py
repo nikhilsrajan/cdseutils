@@ -52,6 +52,16 @@ class Credentials(object):
         )
 
 
+    def is_sh_creds_defined(self):
+        return self.sh_creds.sh_clientid is not None \
+            and self.sh_creds.sh_clientsecret is not None
+    
+
+    def is_s3_creds_defined(self):
+        return self.s3_creds.s3_access_key is not None \
+            and self.s3_creds.s3_secret_key is not None
+
+
 @dataclasses.dataclass
 class S3Path:
     bucket:str

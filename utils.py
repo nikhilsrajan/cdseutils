@@ -1,11 +1,15 @@
 import sentinelhub
 import datetime
 import geopandas as gpd
+import pandas as pd
 import os
 import boto3
 import multiprocessing as mp
 import functools
 import tqdm
+import shapely.ops
+import logging
+import json
 
 from . import constants
 from . import mydataclasses
@@ -14,6 +18,8 @@ from . import mydataclasses
 # Number of concurrent connections limit (IAD): 4
 # see: https://documentation.dataspace.copernicus.eu/Quotas.html
 MAX_CONCURRENT_CONNECTIONS = 4
+
+EPSG_4326 = 'epsg:4326'
 
 
 def create_config(
@@ -27,15 +33,55 @@ def create_config(
     return config
 
 
-def fetch_catalog(
+def fetch_catalog_single_bbox(
+    bbox:sentinelhub.BBox,
     sh_creds:mydataclasses.SHCredentials,
     collection:sentinelhub.DataCollection,
     startdate:datetime.datetime,
     enddate:datetime.datetime,
-    bbox:sentinelhub.geometry.BBox=None,
-    filter:str=None,
-    fields:dict=None,
+    filter:str = None,
+    fields:dict = None,
+    cache_folderpath:str = None,
 ):
+    # Doing this manually here so that the cache foldername is consistent.
+    # This is anyway being done by catalog.search (see docs for sentinelhub.SentinelHubCatalog.search)
+    if bbox and bbox.crs is not sentinelhub.CRS.WGS84:
+        bbox = bbox.transform_bounds(sentinelhub.CRS.WGS84)
+
+    save_catalog_filepath = None
+    save_results_filepath = None
+    if cache_folderpath is not None:
+        _foldername = '+'.join(
+            [collection.catalog_id]
+            + [str(x) for x in list(bbox)]
+            + [startdate.strftime('%Y%m%dT%H%M%S'), 
+               enddate.strftime('%Y%m%dT%H%M%S')]
+        )
+        current_query_cache_folderpath = os.path.join(
+            cache_folderpath, _foldername
+        )
+        os.makedirs(current_query_cache_folderpath, exist_ok=True)
+        if not os.access(current_query_cache_folderpath, os.W_OK):
+            raise PermissionError(
+                f'Change current_query_cache_folderpath as user '
+                f'does not have permission to write to {current_query_cache_folderpath}.'
+            )
+        save_catalog_filepath = os.path.join(
+            current_query_cache_folderpath,
+            'catalog.geojson'
+        )
+        save_results_filepath = os.path.join(
+            current_query_cache_folderpath,
+            'results.json'
+        )
+
+    if save_catalog_filepath is not None and save_results_filepath is not None:
+        if os.path.exists(save_catalog_filepath) and os.path.exists(save_results_filepath):
+            catalog_gdf = gpd.read_file(save_catalog_filepath)
+            with open(save_results_filepath) as h:
+                results = json.load(h)
+            return catalog_gdf, results
+
     config = create_config(sh_creds=sh_creds)
 
     catalog = sentinelhub.SentinelHubCatalog(config=config)
@@ -57,8 +103,62 @@ def fetch_catalog(
         's3url': [res['assets']['data']['href'] for res in results],
     }, crs='epsg:4326')
 
+    if cache_folderpath is not None:
+        catalog_gdf.to_file(save_catalog_filepath)
+        with open(save_results_filepath, 'w') as h:
+            json.dump(results, h)
+
     return catalog_gdf, results
 
+
+def _get_unique_bboxes(
+    bboxes:list[sentinelhub.BBox]
+):
+    return [
+        sentinelhub.BBox(bbox_tuple, crs=sentinelhub.CRS.WGS84) 
+        for bbox_tuple in set(
+            tuple(bbox.transform_bounds(sentinelhub.CRS.WGS84)) 
+            for bbox in bboxes
+        )
+    ]
+
+
+def fetch_catalog(
+    bboxes:list[sentinelhub.BBox],
+    sh_creds:mydataclasses.SHCredentials,
+    collection:sentinelhub.DataCollection,
+    startdate:datetime.datetime,
+    enddate:datetime.datetime,
+    filter:str=None,
+    fields:dict=None,
+    cache_folderpath:str = None,
+):
+    unique_bboxes = _get_unique_bboxes(bboxes=bboxes)
+
+    catalog_gdfs = []
+    results = []
+    
+    for bbox in unique_bboxes:
+        _catalog_gdf, _results = fetch_catalog_single_bbox(
+            bbox = bbox,
+            sh_creds = sh_creds,
+            collection = collection,
+            startdate = startdate,
+            enddate = enddate,
+            filter = filter,
+            fields = fields,
+            cache_folderpath = cache_folderpath,
+        )
+        catalog_gdfs.append(_catalog_gdf)
+        results += _results
+
+    catalog_gdf = gpd.GeoDataFrame(
+        pd.concat(catalog_gdfs).reset_index(drop=True),
+        crs = catalog_gdfs[0].crs
+    )
+
+    return catalog_gdf, results
+    
 
 def download_data(
     collection:str,
@@ -209,8 +309,10 @@ def _download_s3_file_by_tuple(
     s3_path_download_filepath_tuple:tuple[mydataclasses.S3Path, str],
     s3_creds:mydataclasses.S3Credentials,
     overwrite:bool = False,
+    logger:logging.Logger = None,
 ):
     s3_path, download_filepath = s3_path_download_filepath_tuple
+
     try:
         download_s3_file(
             s3_creds = s3_creds,
@@ -220,9 +322,17 @@ def _download_s3_file_by_tuple(
             print_messages = False,
         )
         download_success = os.path.exists(download_filepath)
+
+        if logger is not None:
+            logger.info(f"download_s3_file -- {s3_path.bucket} -- {s3_path.prefix} -- {download_filepath} -- success")
+
     except Exception as e:
         print(f'Encountered error: {e}')
         download_success = False
+        
+        if logger is not None:
+            logger.info(f"download_s3_file -- {s3_path.bucket} -- {s3_path.prefix} -- {download_filepath} -- failed")
+            logger.error(f"Error encountered: \"{e}\" -- download_s3_file(s3_path={s3_path}, download_filepath={download_filepath})")
 
     return download_success
     
@@ -232,6 +342,7 @@ def download_s3_files(
     s3_paths:list[mydataclasses.S3Path],
     download_filepaths:list[str],
     overwrite:bool = False,
+    logger:logging.Logger = None,
 ):
     if len(s3_paths) != len(download_filepaths):
         raise ValueError('Size of s3_paths and download_filepaths do not match.')
@@ -405,3 +516,32 @@ def get_sentinel2_s3_paths(
         download_filepaths += _download_filepaths
     
     return s3_paths, download_filepaths
+
+
+def reduce_geometries(
+    shapes_gdf:gpd.GeoDataFrame,
+):
+    union_geom = shapely.ops.unary_union(shapes_gdf['geometry'])
+    if isinstance(union_geom, shapely.MultiPolygon):
+        geometries = list(union_geom.geoms)
+    elif isinstance(union_geom, shapely.Polygon):
+        geometries = [union_geom]
+    else:
+        raise NotImplementedError(f'Unhandelled geometry type encountered: {union_geom.geom_type}')
+    return gpd.GeoDataFrame(
+        data = {'geometry': geometries},
+        crs = shapes_gdf.crs,
+    )
+
+
+def get_bboxes(
+    shapes_gdf:gpd.GeoDataFrame,
+):  
+    # converting to EPSG_4326 since catalog search converts the bbox to 
+    # that crs before conducting search
+    reduced_shapes_gdf = reduce_geometries(shapes_gdf).to_crs(EPSG_4326)
+    bboxes = [
+        sentinelhub.BBox(geom.bounds, crs=reduced_shapes_gdf.crs)
+        for geom in reduced_shapes_gdf['geometry']
+    ]
+    return bboxes
