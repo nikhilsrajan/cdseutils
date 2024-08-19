@@ -8,6 +8,8 @@ SH_BASE_URL = "https://sh.dataspace.copernicus.eu"
 SH_TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
 
 ## see: https://hls.gsfc.nasa.gov/products-description/tiling-system/
+## Ignored this file and used this: https://github.com/justinelliotmeyers/Sentinel-2-Shapefile-Index/tree/master
+## Read: https://eatlas.org.au/geonetwork/srv/api/records/f7468d15-12be-4e3f-a246-b2882a324f59?language=eng
 SENTINEL_TILES_KML = 'https://hls.gsfc.nasa.gov/wp-content/uploads/2016/03/S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml'
 
 # s3 constants

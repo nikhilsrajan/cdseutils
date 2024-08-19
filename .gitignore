@@ -1,6 +1,7 @@
 # Custom
 .venv/
 mysecrets.py
+supportfiles/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
