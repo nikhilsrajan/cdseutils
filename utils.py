@@ -22,6 +22,44 @@ MAX_CONCURRENT_CONNECTIONS = 4
 EPSG_4326 = 'epsg:4326'
 
 
+def cdse_credentials_to_dict(
+    cdse_creds:mydataclasses.Credentials,
+):
+    return dict(
+        sh_clientid = cdse_creds.sh_creds.sh_clientid,
+        sh_clientsecret = cdse_creds.sh_creds.sh_clientsecret,
+        s3_access_key = cdse_creds.s3_creds.s3_access_key,
+        s3_secret_key = cdse_creds.s3_creds.s3_secret_key,
+    )
+
+
+def cdse_credentials_from_dict(cdse_creds_dict:dict):
+    return mydataclasses.Credentials(
+        cdse_clientid = cdse_creds_dict['sh_clientid'],
+        cdse_clientsecret = cdse_creds_dict['sh_clientsecret'],
+        cdse_s3_access_key = cdse_creds_dict['s3_access_key'],
+        cdse_s3_secret_key = cdse_creds_dict['s3_secret_key'],
+    )
+
+
+def cdse_credentials_to_json(
+    cdse_creds:mydataclasses.Credentials,
+    filepath:str,
+):
+    with open(filepath, 'w') as h:
+        json.dump(cdse_credentials_to_dict(
+            cdse_creds = cdse_creds,
+        ), h)
+
+
+def cdse_credentials_from_json(
+    filepath:str,
+):
+    with open(filepath, 'r') as h:
+        cdse_creds = cdse_credentials_from_dict(json.load(h))
+    return cdse_creds
+
+
 def create_config(
     sh_creds:mydataclasses.SHCredentials,
 ):
