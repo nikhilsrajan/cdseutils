@@ -248,7 +248,7 @@ def download_data_s2l1c(
 
 def download_s3_file(
     s3_creds:mydataclasses.S3Credentials,
-    s3_path:mydataclasses.S3Path,
+    s3path:mydataclasses.S3Path,
     download_filepath:str = None,
     download_folderpath:str = None,
     overwrite:bool = False,
@@ -265,7 +265,7 @@ def download_s3_file(
         )
 
     if download_filepath is None:
-        filename = s3_path.prefix.split('/')[-1]
+        filename = s3path.prefix.split('/')[-1]
         download_filepath = os.path.join(
             download_folderpath, filename,
         )
@@ -279,8 +279,8 @@ def download_s3_file(
     _print('---------------------')
     _print('File set to download:')
     _print('---------------------')
-    _print('bucket:', s3_path.bucket)
-    _print('prefix:', s3_path.prefix)
+    _print('bucket:', s3path.bucket)
+    _print('prefix:', s3path.prefix)
     _print('---------------------')
     
     if not file_exists or overwrite:
@@ -295,8 +295,8 @@ def download_s3_file(
             aws_secret_access_key = s3_creds.s3_secret_key,
             region_name = s3_creds.region_name
         )
-        bucket = s3.Bucket(s3_path.bucket)
-        bucket.download_file(s3_path.prefix, download_filepath)
+        bucket = s3.Bucket(s3path.bucket)
+        bucket.download_file(s3path.prefix, download_filepath)
     else:
         _print('File already downloaded.')
     
@@ -306,17 +306,17 @@ def download_s3_file(
 
 
 def _download_s3_file_by_tuple(
-    s3_path_download_filepath_tuple:tuple[mydataclasses.S3Path, str],
+    s3path_download_filepath_tuple:tuple[mydataclasses.S3Path, str],
     s3_creds:mydataclasses.S3Credentials,
     overwrite:bool = False,
     logger:logging.Logger = None,
 ):
-    s3_path, download_filepath = s3_path_download_filepath_tuple
+    s3path, download_filepath = s3path_download_filepath_tuple
 
     try:
         download_s3_file(
             s3_creds = s3_creds,
-            s3_path = s3_path,
+            s3path = s3path,
             download_filepath = download_filepath,
             overwrite = overwrite,
             print_messages = False,
@@ -324,198 +324,47 @@ def _download_s3_file_by_tuple(
         download_success = os.path.exists(download_filepath)
 
         if logger is not None:
-            logger.info(f"download_s3_file -- {s3_path.bucket} -- {s3_path.prefix} -- {download_filepath} -- success")
+            logger.info(f"download_s3_file -- {s3path.bucket} -- {s3path.prefix} -- {download_filepath} -- success")
 
     except Exception as e:
         print(f'Encountered error: {e}')
         download_success = False
         
         if logger is not None:
-            logger.info(f"download_s3_file -- {s3_path.bucket} -- {s3_path.prefix} -- {download_filepath} -- failed")
-            logger.error(f"Error encountered: \"{e}\" -- download_s3_file(s3_path={s3_path}, download_filepath={download_filepath})")
+            logger.info(f"download_s3_file -- {s3path.bucket} -- {s3path.prefix} -- {download_filepath} -- failed")
+            logger.error(f"Error encountered: \"{e}\" -- download_s3_file(s3path={s3path}, download_filepath={download_filepath})")
 
     return download_success
     
 
 def download_s3_files(
     s3_creds:mydataclasses.S3Credentials,
-    s3_paths:list[mydataclasses.S3Path],
+    s3paths:list[mydataclasses.S3Path],
     download_filepaths:list[str],
     overwrite:bool = False,
     logger:logging.Logger = None,
 ):
-    if len(s3_paths) != len(download_filepaths):
-        raise ValueError('Size of s3_paths and download_filepaths do not match.')
+    if len(s3paths) != len(download_filepaths):
+        raise ValueError('Size of s3paths and download_filepaths do not match.')
     
     download_s3_file_by_tuple_partial = functools.partial(
         _download_s3_file_by_tuple,
         s3_creds = s3_creds,
         overwrite = overwrite,
+        logger = logger,
     )
 
-    s3_path_download_filepath_tuples = list(zip(s3_paths, download_filepaths))
+    s3path_download_filepath_tuples = list(zip(s3paths, download_filepaths))
 
     with mp.Pool(MAX_CONCURRENT_CONNECTIONS) as p:
         download_successes = list(tqdm.tqdm(
-            p.imap(download_s3_file_by_tuple_partial, s3_path_download_filepath_tuples), 
-            total=len(s3_path_download_filepath_tuples)
+            p.imap(download_s3_file_by_tuple_partial, s3path_download_filepath_tuples), 
+            total=len(s3path_download_filepath_tuples)
         ))
     
     print(f"Successful downloads: {sum(download_successes)} / {len(download_successes)}")
     
     return download_successes
-
-
-def sentinel2_id_parser(sentinel2_id:str):
-    sentinel2_id = sentinel2_id.replace('.SAFE', '')
-
-    # see: https://sentinels.copernicus.eu/en/web/sentinel/user-guides/sentinel-2-msi/naming-convention
-    # Compact Naming Convention
-    mission_identifier, \
-    product_level, \
-    datatake_sensing_startdate, \
-    processing_baseline_number, \
-    relative_orbit_number, \
-    tile_number_field, \
-    product_discriminator = sentinel2_id.split('_')
-
-    return dict(
-        mission_identifier = mission_identifier,
-        product_level = product_level,
-        datatake_sensing_startdate = datatake_sensing_startdate,
-        processing_baseline_number = processing_baseline_number,
-        relative_orbit_number = relative_orbit_number,
-        tile_number_field = tile_number_field,
-        product_discriminator = product_discriminator,
-    )
-
-
-def get_sentinel2_band_filename(
-    sentinel2_id:str,
-    band:str,
-    ext:str='.jp2',
-):
-    parsed_sentinel_id = sentinel2_id_parser(sentinel2_id = sentinel2_id)
-    tile_number_field = parsed_sentinel_id['tile_number_field']
-    datatake_sensing_startdate = parsed_sentinel_id['datatake_sensing_startdate']
-    return f'{tile_number_field}_{datatake_sensing_startdate}_{band}{ext}'
-
-
-def parse_sentinel2_band_filename(
-    sentinel2_band_filename:str,
-):
-    filename, ext = sentinel2_band_filename.split('.')
-    tile_number_field, \
-    datatake_sensing_startdate, \
-    band = filename.split('_')
-
-    return dict(
-        tile_number_field = tile_number_field,
-        datatake_sensing_startdate = datatake_sensing_startdate,
-        band = band,
-    )
-
-
-def get_sentinel2_s3_paths_single_url(
-    s3_url:str,
-    s3_creds:mydataclasses.S3Credentials,
-    root_folderpath:str,
-    bands:list[str],
-) -> tuple[list[mydataclasses.S3Path], list[str]]:
-    VALID_START = 's3://EODATA/'
-    VALID_END = '.SAFE/'
-    EXT = '.jp2'
-
-    if not s3_url.startswith(VALID_START):
-        raise ValueError(f"Invalid s3_url, valid s3_url starts with '{VALID_START}'")
-    
-    if not s3_url.endswith(VALID_END):
-        raise ValueError(f"Invalid s3_url, valid s3_url ends with '{VALID_END}'")
-    
-    invalid_bands = list(set(bands) - set(constants.Bands.Sentinel2.ALL))
-
-    if len(invalid_bands) > 0:
-        raise ValueError(f"Invalid bands found: {invalid_bands}")
-    
-    sentinel2_id = s3_url.replace(VALID_END, '').split('/')[-1]
-
-    filenames_to_download = [
-        get_sentinel2_band_filename(
-            sentinel2_id = sentinel2_id, 
-            band = band, 
-            ext = EXT,
-        ) 
-        for band in bands
-    ]
-
-    s3 = boto3.resource(
-        's3',
-        endpoint_url = s3_creds.endpoint_url,
-        aws_access_key_id = s3_creds.s3_access_key,
-        aws_secret_access_key = s3_creds.s3_secret_key,
-        region_name = s3_creds.region_name,
-    )
-
-    all_files = s3.Bucket("eodata").objects.filter(Prefix=s3_url.replace(VALID_START, ''))
-    s3_paths = [
-        mydataclasses.S3Path(bucket=file.bucket_name, prefix=file.key) for file in all_files
-        if any(file_to_download in file.key for file_to_download in set(filenames_to_download))
-    ]
-
-    download_folderpath = os.path.join(
-        root_folderpath, *s3_url.replace(VALID_START, '').replace(VALID_END, '').split('/')
-    )
-
-    download_filepaths = []
-    for s3_path in s3_paths:
-        band = parse_sentinel2_band_filename(
-            sentinel2_band_filename = s3_path.prefix.split('/')[-1]
-        )['band']
-        download_filepaths.append(os.path.join(download_folderpath, f"{band}{EXT}"))
-
-    return s3_paths, download_filepaths
-
-
-def get_sentinel2_s3_paths(
-    s3_urls:list[str],
-    s3_creds:mydataclasses.S3Credentials,
-    root_folderpath:str,
-    bands:list[str],
-    njobs:int = 16,
-) -> tuple[list[mydataclasses.S3Path], list[str]]:
-    """
-    Ran a tiny experiment to get the following times:
-    -  4 jobs -> 60s
-    -  8 jobs -> 30s
-    - 16 jobs -> 18s
-    - 32 jobs -> 23s
-    - 64 jobs -> 28s
-
-    Thus set the default njobs to be 16.
-    """
-    get_sentinel2_s3_paths_single_url_partial = \
-    functools.partial(
-        get_sentinel2_s3_paths_single_url,
-        s3_creds = s3_creds,
-        root_folderpath = root_folderpath,
-        bands = bands,
-    )
-
-    unique_s3_urls = list(set(s3_urls))
-
-    with mp.Pool(njobs) as p:
-        list_of_tuple_of_lists = list(tqdm.tqdm(
-            p.imap(get_sentinel2_s3_paths_single_url_partial, unique_s3_urls), 
-            total=len(unique_s3_urls)
-        ))
-
-    s3_paths = []
-    download_filepaths = []
-    for _s3_paths, _download_filepaths in list_of_tuple_of_lists:
-        s3_paths += _s3_paths
-        download_filepaths += _download_filepaths
-    
-    return s3_paths, download_filepaths
 
 
 def reduce_geometries(
@@ -548,3 +397,17 @@ def get_bboxes(
     bboxes = _get_unique_bboxes(bboxes=bboxes)
 
     return bboxes
+
+
+def s3path_to_s3url(s3path:mydataclasses.S3Path, ):
+    return f's3://{s3path.bucket}/{s3path.prefix}'
+
+
+def s3url_to_s3path(s3url:str):
+    if not s3url.startswith('s3://'):
+        raise ValueError("s3url must always start with 's3://'")
+    s3url = s3url.removeprefix('s3://')
+    slash_splits = s3url.split('/')
+    bucket = slash_splits[0]
+    prefix = '/'.join(slash_splits[1:])
+    return mydataclasses.S3Path(bucket=bucket, prefix=prefix)
