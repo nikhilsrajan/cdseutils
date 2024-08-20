@@ -400,7 +400,7 @@ def download_s3_files(
             total=len(s3path_download_filepath_tuples)
         ))
     
-    print(f"Successful downloads: {sum(download_successes)} / {len(download_successes)}")
+    # print(f"Successful downloads: {sum(download_successes)} / {len(download_successes)}")
     
     return download_successes
 
