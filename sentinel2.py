@@ -13,6 +13,7 @@ VALID_S3URL_START = 's3://EODATA/'
 VALID_S3URL_END = '.SAFE/'
 EXT_JP2 = '.jp2'
 EXT_SAFE = '.SAFE'
+EXT_XML = '.xml'
 
 
 def sentinel2_id_parser(sentinel2_id:str):
@@ -44,9 +45,11 @@ def parse_s3url(s3url:str):
     slash_splits = s3path.prefix.split('/')
     sentinel2_id = [x for x in slash_splits if EXT_SAFE in x][0] if EXT_SAFE in s3url else None
     band_filename = [x for x in slash_splits if EXT_JP2 in x][0] if EXT_JP2 in s3url else None
+    xml_filename = [x for x in slash_splits if EXT_XML in x][0] if EXT_XML in s3url else None
     return {
         'id': sentinel2_id,
         'band_filename': band_filename,
+        'xml_filename': xml_filename,
     }
 
 
@@ -122,6 +125,8 @@ def get_s3paths_single_url(
         for band in bands
     ]
 
+    filenames_to_download.append('MTD_TL.xml') # metadata file for angles information
+
     s3 = boto3.resource(
         's3',
         endpoint_url = s3_creds.endpoint_url,
@@ -145,9 +150,16 @@ def get_s3paths_single_url(
 
     download_filepaths = []
     for s3path in s3paths:
-        sentinel2_band_filename = parse_s3url(s3url=utils.s3path_to_s3url(s3path=s3path))['band_filename']
-        band = parse_band_filename(sentinel2_band_filename = sentinel2_band_filename)['band']
-        download_filepaths.append(os.path.join(download_folderpath, f"{band}{EXT_JP2}"))
+        parsed_s3path = parse_s3url(s3url=utils.s3path_to_s3url(s3path=s3path))
+        if EXT_JP2 in s3path.prefix:
+            sentinel2_band_filename = parsed_s3path['band_filename']
+            parsed_band_filename = parse_band_filename(sentinel2_band_filename = sentinel2_band_filename)
+            band = parsed_band_filename['band']
+            ext = parsed_band_filename['ext']
+            download_filepaths.append(os.path.join(download_folderpath, f"{band}{ext}"))
+        elif EXT_XML in s3path.prefix:
+            xml_filename = parsed_s3path['xml_filename']
+            download_filepaths.append(os.path.join(download_folderpath, xml_filename))
 
     return s3paths, download_filepaths
 

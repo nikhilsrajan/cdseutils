@@ -284,6 +284,12 @@ def download_data_s2l1c(
     )
 
 
+S3_DOWNLOAD_FAILED = 'status-download-s3-failed'
+S3_DOWNLOAD_SUCCESS = 'status-download-s3-success'
+S3_DOWNLOAD_SKIPPED = 'status-download-s3-skipped'
+S3_DOWNLOAD_OVERWRITE = 'status-download-s3-overwrite'
+
+
 def download_s3_file(
     s3_creds:mydataclasses.S3Credentials,
     s3path:mydataclasses.S3Path,
@@ -291,6 +297,7 @@ def download_s3_file(
     download_folderpath:str = None,
     overwrite:bool = False,
     print_messages:bool = True,
+    raise_error:bool = True,
 ):
     def _print(*args, end='\n', sep=' '):
         if print_messages:
@@ -325,22 +332,29 @@ def download_s3_file(
         if file_exists:
             _print('Re-', end='', sep='')
         _print('Downloading file...')
-
-        s3 = boto3.resource(
-            's3',
-            endpoint_url = s3_creds.endpoint_url,
-            aws_access_key_id = s3_creds.s3_access_key,
-            aws_secret_access_key = s3_creds.s3_secret_key,
-            region_name = s3_creds.region_name
-        )
-        bucket = s3.Bucket(s3path.bucket)
-        bucket.download_file(s3path.prefix, download_filepath)
+        try:
+            s3 = boto3.resource(
+                's3',
+                endpoint_url = s3_creds.endpoint_url,
+                aws_access_key_id = s3_creds.s3_access_key,
+                aws_secret_access_key = s3_creds.s3_secret_key,
+                region_name = s3_creds.region_name
+            )
+            bucket = s3.Bucket(s3path.bucket)
+            bucket.download_file(s3path.prefix, download_filepath)
+            ret = S3_DOWNLOAD_OVERWRITE if file_exists else S3_DOWNLOAD_SUCCESS
+        except Exception as e:
+            if raise_error:
+                raise e
+            else:
+                ret = S3_DOWNLOAD_FAILED
     else:
         _print('File already downloaded.')
+        ret = S3_DOWNLOAD_SKIPPED
     
     _print('---------------------')
 
-    return download_filepath
+    return download_filepath, ret
 
 
 def _download_s3_file_by_tuple(
@@ -352,27 +366,26 @@ def _download_s3_file_by_tuple(
     s3path, download_filepath = s3path_download_filepath_tuple
 
     try:
-        download_s3_file(
+        _, ret = download_s3_file(
             s3_creds = s3_creds,
             s3path = s3path,
             download_filepath = download_filepath,
             overwrite = overwrite,
             print_messages = False,
         )
-        download_success = os.path.exists(download_filepath)
 
         if logger is not None:
             logger.info(f"download_s3_file -- {s3path.bucket} -- {s3path.prefix} -- {download_filepath} -- success")
 
     except Exception as e:
         print(f'Encountered error: {e}')
-        download_success = False
+        ret = S3_DOWNLOAD_FAILED
         
         if logger is not None:
             logger.info(f"download_s3_file -- {s3path.bucket} -- {s3path.prefix} -- {download_filepath} -- failed")
             logger.error(f"Error encountered: \"{e}\" -- download_s3_file(s3path={s3path}, download_filepath={download_filepath})")
 
-    return download_success
+    return ret
     
 
 def download_s3_files(
@@ -395,14 +408,16 @@ def download_s3_files(
     s3path_download_filepath_tuples = list(zip(s3paths, download_filepaths))
 
     with mp.Pool(MAX_CONCURRENT_CONNECTIONS) as p:
-        download_successes = list(tqdm.tqdm(
+        download_statuses = list(tqdm.tqdm(
             p.imap(download_s3_file_by_tuple_partial, s3path_download_filepath_tuples), 
             total=len(s3path_download_filepath_tuples)
         ))
     
+
+    
     # print(f"Successful downloads: {sum(download_successes)} / {len(download_successes)}")
     
-    return download_successes
+    return download_statuses
 
 
 def reduce_geometries(
