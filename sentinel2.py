@@ -150,6 +150,7 @@ def get_s3paths_single_url(
 
     download_filepaths = []
     for s3path in s3paths:
+        print(s3path)
         parsed_s3path = parse_s3url(s3url=utils.s3path_to_s3url(s3path=s3path))
         if EXT_JP2 in s3path.prefix:
             sentinel2_band_filename = parsed_s3path['band_filename']
