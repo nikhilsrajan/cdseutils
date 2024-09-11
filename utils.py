@@ -284,10 +284,10 @@ def download_data_s2l1c(
     )
 
 
-S3_DOWNLOAD_FAILED = 'status-download-s3-failed'
-S3_DOWNLOAD_SUCCESS = 'status-download-s3-success'
-S3_DOWNLOAD_SKIPPED = 'status-download-s3-skipped'
-S3_DOWNLOAD_OVERWRITE = 'status-download-s3-overwrite'
+S3_DOWNLOAD_FAILED = 'return::status-download-s3-failed'
+S3_DOWNLOAD_SUCCESS = 'return::status-download-s3-success'
+S3_DOWNLOAD_SKIPPED = 'return::status-download-s3-skipped'
+S3_DOWNLOAD_OVERWRITE = 'return::status-download-s3-overwrite'
 
 
 def download_s3_file(
