@@ -32,8 +32,8 @@ EVALSCRIPTS = {
 
 # Bands
 class Bands:
-    class Sentinel2:
-        NAME = 'sentinel2'
+    class S2L1C:
+        NAME = 'sentinel-2-l1c'
         B01 = 'B01'
         B02 = 'B02'
         B03 = 'B03'
@@ -52,3 +52,22 @@ class Bands:
             B08, B8A, B09, B10, B11, B12,
         ]
         
+    class S2L2A:
+        NAME = 'sentinel-2-l2a'
+        B01 = 'B01'
+        B02 = 'B02'
+        B03 = 'B03'
+        B04 = 'B04'
+        B05 = 'B05'
+        B06 = 'B06'
+        B07 = 'B07'
+        B08 = 'B08'
+        B8A = 'B8A'
+        B09 = 'B09'
+        B11 = 'B11'
+        B12 = 'B12'
+        SCL = 'SCL'
+        ALL = [
+            B01, B02, B03, B04, B05, B06, B07,
+            B08, B8A, B09, B11, B12, SCL,
+        ]

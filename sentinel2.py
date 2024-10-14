@@ -56,21 +56,56 @@ def parse_s3url(s3url:str):
 def get_band_filename(
     sentinel2_id:str,
     band:str,
-    ext:str=EXT_JP2,
+    ext:str = EXT_JP2,
+    add_s2l2a_suffix:bool = False,
 ):
+    # sentinel-2-l2a has this suffix present in its band names
+    s2l2a_suffix = ''
+    if add_s2l2a_suffix:
+        if band in [
+            constants.Bands.S2L2A.B01,
+            constants.Bands.S2L2A.B05,
+            constants.Bands.S2L2A.B06,
+            constants.Bands.S2L2A.B07,
+            constants.Bands.S2L2A.B8A,
+            constants.Bands.S2L2A.B09,
+            constants.Bands.S2L2A.B11,
+            constants.Bands.S2L2A.B12,
+            constants.Bands.S2L2A.SCL,
+        ]:
+            s2l2a_suffix = '_20m'
+        elif band in [
+            constants.Bands.S2L2A.B02,
+            constants.Bands.S2L2A.B03,
+            constants.Bands.S2L2A.B04,
+            constants.Bands.S2L2A.B08,
+        ]:
+            s2l2a_suffix = '_10m'
+        else:
+            raise NotImplementedError(f'band = {band}')
+
     parsed_sentinel_id = sentinel2_id_parser(sentinel2_id = sentinel2_id)
     tile_number_field = parsed_sentinel_id['tile_number_field']
     datatake_sensing_startdate = parsed_sentinel_id['datatake_sensing_startdate']
-    return f'{tile_number_field}_{datatake_sensing_startdate}_{band}{ext}'
+    return f'{tile_number_field}_{datatake_sensing_startdate}_{band}{s2l2a_suffix}{ext}'
 
 
 def parse_band_filename(
     sentinel2_band_filename:str,
+    satellite:str = constants.Bands.S2L1C.NAME,
 ):
     filename, ext = sentinel2_band_filename.split('.')
-    tile_number_field, \
-    datatake_sensing_startdate, \
-    band = filename.split('_')
+
+    if satellite == constants.Bands.S2L1C.NAME:
+        tile_number_field, \
+        datatake_sensing_startdate, \
+        band = filename.split('_')
+    elif satellite == constants.Bands.S2L2A.NAME:
+        tile_number_field, \
+        datatake_sensing_startdate, \
+        band, resolution = filename.split('_')
+    else:
+        raise NotImplementedError(f'satellite = {satellite}')
 
     return dict(
         tile_number_field = tile_number_field,
@@ -87,11 +122,13 @@ def s3url_to_download_folderpath(
     if not s3url.startswith(VALID_S3URL_START):
         raise ValueError(f"Invalid s3url, valid s3url starts with '{VALID_S3URL_START}'")
     
-    if not s3url.endswith(VALID_S3URL_END):
-        raise ValueError(f"Invalid s3url, valid s3url ends with '{VALID_S3URL_END}'")
+    if not (s3url.endswith(VALID_S3URL_END) or s3url.endswith(EXT_SAFE)):
+        raise ValueError(f"Invalid s3url, valid s3url ends with '{VALID_S3URL_END}' or '{EXT_SAFE}")
+
+    ends_with = VALID_S3URL_END if s3url.endswith(VALID_S3URL_END) else EXT_SAFE
     
     download_folderpath = os.path.join(
-        root_folderpath, *s3url.removeprefix(VALID_S3URL_START).removesuffix(VALID_S3URL_END).split('/')
+        root_folderpath, *s3url.removeprefix(VALID_S3URL_START).removesuffix(ends_with).split('/')
     )
 
     return download_folderpath
@@ -102,14 +139,26 @@ def get_s3paths_single_url(
     s3_creds:mydataclasses.S3Credentials,
     root_folderpath:str,
     bands:list[str],
+    satellite:str = constants.Bands.S2L1C.NAME,
 ) -> tuple[list[mydataclasses.S3Path], list[str]]:
     if not s3url.startswith(VALID_S3URL_START):
         raise ValueError(f"Invalid s3url, valid s3url starts with '{VALID_S3URL_START}'")
     
-    if not s3url.endswith(VALID_S3URL_END):
-        raise ValueError(f"Invalid s3url, valid s3url ends with '{VALID_S3URL_END}'")
+    if not (s3url.endswith(VALID_S3URL_END) or s3url.endswith(EXT_SAFE)):
+        raise ValueError(f"Invalid s3url, valid s3url ends with '{VALID_S3URL_END}' or '{EXT_SAFE}")
+
+    ends_with = VALID_S3URL_END if s3url.endswith(VALID_S3URL_END) else EXT_SAFE
     
-    invalid_bands = list(set(bands) - set(constants.Bands.Sentinel2.ALL))
+    if satellite == constants.Bands.S2L1C.NAME:
+        all_bands = constants.Bands.S2L1C.ALL
+        add_s2l2a_suffix = False
+    elif satellite == constants.Bands.S2L2A.NAME:
+        all_bands = constants.Bands.S2L2A.ALL
+        add_s2l2a_suffix = True
+    else:
+        raise NotImplementedError(f'satellite = {satellite}')
+    
+    invalid_bands = list(set(bands) - set(all_bands))
 
     if len(invalid_bands) > 0:
         raise ValueError(f"Invalid bands found: {invalid_bands}")
@@ -121,6 +170,7 @@ def get_s3paths_single_url(
             sentinel2_id = sentinel2_id, 
             band = band, 
             ext = EXT_JP2,
+            add_s2l2a_suffix = add_s2l2a_suffix,
         ) 
         for band in bands
     ]
@@ -153,7 +203,10 @@ def get_s3paths_single_url(
         parsed_s3path = parse_s3url(s3url=utils.s3path_to_s3url(s3path=s3path))
         if EXT_JP2 in s3path.prefix:
             sentinel2_band_filename = parsed_s3path['band_filename']
-            parsed_band_filename = parse_band_filename(sentinel2_band_filename = sentinel2_band_filename)
+            parsed_band_filename = parse_band_filename(
+                sentinel2_band_filename = sentinel2_band_filename,
+                satellite = satellite,
+            )
             band = parsed_band_filename['band']
             ext = parsed_band_filename['ext']
             download_filepaths.append(os.path.join(download_folderpath, f"{band}{ext}"))
@@ -170,6 +223,7 @@ def get_s3paths(
     root_folderpath:str,
     bands:list[str],
     njobs:int = 16,
+    satellite:str = constants.Bands.S2L1C.NAME,
 ) -> tuple[list[mydataclasses.S3Path], list[str]]:
     """
     Ran a tiny experiment to get the following times:
@@ -187,6 +241,7 @@ def get_s3paths(
         s3_creds = s3_creds,
         root_folderpath = root_folderpath,
         bands = bands,
+        satellite = satellite,
     )
 
     unique_s3urls = list(set(s3urls))
