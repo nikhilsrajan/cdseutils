@@ -68,7 +68,6 @@ def get_band_filename(
             constants.Bands.S2L2A.B06,
             constants.Bands.S2L2A.B07,
             constants.Bands.S2L2A.B8A,
-            constants.Bands.S2L2A.B09,
             constants.Bands.S2L2A.B11,
             constants.Bands.S2L2A.B12,
             constants.Bands.S2L2A.SCL,
@@ -81,6 +80,10 @@ def get_band_filename(
             constants.Bands.S2L2A.B08,
         ]:
             s2l2a_suffix = '_10m'
+        elif band in [
+            constants.Bands.S2L2A.B09,
+        ]:
+            s2l2a_suffix = '_60m'
         else:
             raise NotImplementedError(f'band = {band}')
 
