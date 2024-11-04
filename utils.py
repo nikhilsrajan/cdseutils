@@ -20,6 +20,7 @@ from . import mydataclasses
 MAX_CONCURRENT_CONNECTIONS = 4
 
 EPSG_4326 = 'epsg:4326'
+WGS_84 = 'wgs84' # same as epsg:4326 but sentinelhub raises warning for using epsg:4326
 
 
 def cdse_credentials_to_dict(
@@ -423,15 +424,9 @@ def download_s3_files(
 def reduce_geometries(
     shapes_gdf:gpd.GeoDataFrame,
 ):
-    union_geom = shapely.ops.unary_union(shapes_gdf['geometry'])
-    if isinstance(union_geom, shapely.MultiPolygon):
-        geometries = list(union_geom.geoms)
-    elif isinstance(union_geom, shapely.Polygon):
-        geometries = [union_geom]
-    else:
-        raise NotImplementedError(f'Unhandelled geometry type encountered: {union_geom.geom_type}')
+    union_geom_convexhull = shapely.ops.unary_union(shapes_gdf['geometry']).convex_hull
     return gpd.GeoDataFrame(
-        data = {'geometry': geometries},
+        data = {'geometry': [union_geom_convexhull]},
         crs = shapes_gdf.crs,
     )
 
@@ -439,9 +434,9 @@ def reduce_geometries(
 def get_bboxes(
     shapes_gdf:gpd.GeoDataFrame,
 ):  
-    # converting to EPSG_4326 since catalog search converts the bbox to 
+    # converting to WGS_84 since catalog search converts the bbox to 
     # that crs before conducting search
-    reduced_shapes_gdf = reduce_geometries(shapes_gdf).to_crs(EPSG_4326)
+    reduced_shapes_gdf = reduce_geometries(shapes_gdf).to_crs(WGS_84)
     bboxes = [
         sentinelhub.BBox(geom.bounds, crs=reduced_shapes_gdf.crs)
         for geom in reduced_shapes_gdf['geometry']
