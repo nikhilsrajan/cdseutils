@@ -72,7 +72,7 @@ def create_config(
     return config
 
 
-def fetch_catalog_single_bbox(
+def fetch_catalog(
     bbox:sentinelhub.BBox,
     sh_creds:mydataclasses.SHCredentials,
     collection:sentinelhub.DataCollection,
@@ -81,7 +81,7 @@ def fetch_catalog_single_bbox(
     filter:str = None,
     fields:dict = None,
     cache_folderpath:str = None,
-):
+) -> tuple[gpd.GeoDataFrame, list[dict]]:
     # Doing this manually here so that the cache foldername is consistent.
     # This is anyway being done by catalog.search (see docs for sentinelhub.SentinelHubCatalog.search)
     if bbox.crs is not sentinelhub.CRS.WGS84:
@@ -150,54 +150,49 @@ def fetch_catalog_single_bbox(
     return catalog_gdf, results
 
 
-def _get_unique_bboxes(
-    bboxes:list[sentinelhub.BBox]
-):
-    return [
-        sentinelhub.BBox(bbox_tuple, crs=sentinelhub.CRS.WGS84) 
-        for bbox_tuple in set(
-            tuple(bbox.transform_bounds(sentinelhub.CRS.WGS84)) 
-            for bbox in bboxes
-        )
-    ]
-
-
-def fetch_catalog(
-    bboxes:list[sentinelhub.BBox],
+def query_catalog(
+    shapes_gdf:gpd.GeoDataFrame,
     sh_creds:mydataclasses.SHCredentials,
     collection:sentinelhub.DataCollection,
     startdate:datetime.datetime,
     enddate:datetime.datetime,
-    filter:str=None,
-    fields:dict=None,
     cache_folderpath:str = None,
-):
-    unique_bboxes = _get_unique_bboxes(bboxes=bboxes)
-
-    catalog_gdfs = []
-    results = []
-    
-    for bbox in unique_bboxes:
-        _catalog_gdf, _results = fetch_catalog_single_bbox(
-            bbox = bbox,
-            sh_creds = sh_creds,
-            collection = collection,
-            startdate = startdate,
-            enddate = enddate,
-            filter = filter,
-            fields = fields,
-            cache_folderpath = cache_folderpath,
-        )
-        catalog_gdfs.append(_catalog_gdf)
-        results += _results
-
-    catalog_gdf = gpd.GeoDataFrame(
-        pd.concat(catalog_gdfs).reset_index(drop=True),
-        crs = catalog_gdfs[0].crs
+) -> gpd.GeoDataFrame:
+    bbox = get_bbox(shapes_gdf=shapes_gdf)
+    # fetch_catalog is caching the results, cache_folderpath is a
+    # critical parameter to reduce api calls.
+    catalog_gdf, results = fetch_catalog(
+        bbox = bbox,
+        sh_creds = sh_creds,
+        collection = collection,
+        startdate = startdate,
+        enddate = enddate,
+        cache_folderpath = cache_folderpath,
     )
-
-    return catalog_gdf, results
+    if collection in [
+        sentinelhub.DataCollection.SENTINEL2_L1C,
+        sentinelhub.DataCollection.SENTINEL2_L2A,
+    ]:
+        catalog_gdf['cloud_cover'] = [x['properties']['eo:cloud_cover'] for x in results]
     
+    intersecting_ids = gpd.sjoin(
+        catalog_gdf, shapes_gdf[['geometry']].to_crs(catalog_gdf.crs)
+    )['id'].unique()
+
+    catalog_gdf = catalog_gdf[catalog_gdf['id'].isin(intersecting_ids)].reset_index(drop=True)
+
+    if catalog_gdf['id'].value_counts().max() > 1:
+        raise ValueError(
+            "CRITICAL ERROR: When this code was written (2024-08-19), the assumption "
+            "was that id obtained from sentinelhub catalog was always going to be unique. "
+            "This does not hold true anymore. This is a critical issue as the folder "
+            "structure for locally storing sentinel-2 tiles were based on the assumption "
+            "that the id would be unique. Heavy refactoring needs to be performed to "
+            "take into consideration this new found bug."
+        )
+
+    return catalog_gdf
+
 
 def download_data(
     collection:str,
@@ -424,6 +419,7 @@ def download_s3_files(
 def reduce_geometries(
     shapes_gdf:gpd.GeoDataFrame,
 ):
+    # This always returns a single geometry (because it makes it faster to query)
     union_geom_convexhull = shapely.ops.unary_union(shapes_gdf['geometry']).convex_hull
     return gpd.GeoDataFrame(
         data = {'geometry': [union_geom_convexhull]},
@@ -431,20 +427,16 @@ def reduce_geometries(
     )
 
 
-def get_bboxes(
+def get_bbox(
     shapes_gdf:gpd.GeoDataFrame,
 ):  
     # converting to WGS_84 since catalog search converts the bbox to 
     # that crs before conducting search
     reduced_shapes_gdf = reduce_geometries(shapes_gdf).to_crs(WGS_84)
-    bboxes = [
-        sentinelhub.BBox(geom.bounds, crs=reduced_shapes_gdf.crs)
-        for geom in reduced_shapes_gdf['geometry']
-    ]
-
-    bboxes = _get_unique_bboxes(bboxes=bboxes)
-
-    return bboxes
+    geom = reduced_shapes_gdf['geometry'][0]
+    crs = reduced_shapes_gdf.crs
+    bbox = sentinelhub.BBox(geom.bounds, crs=crs)
+    return bbox
 
 
 def s3path_to_s3url(s3path:mydataclasses.S3Path, ):
