@@ -390,6 +390,7 @@ def download_s3_files(
     download_filepaths:list[str],
     overwrite:bool = False,
     logger:logging.Logger = None,
+    njobs:int = MAX_CONCURRENT_CONNECTIONS,
 ):
     if len(s3paths) != len(download_filepaths):
         raise ValueError('Size of s3paths and download_filepaths do not match.')
@@ -403,15 +404,11 @@ def download_s3_files(
 
     s3path_download_filepath_tuples = list(zip(s3paths, download_filepaths))
 
-    with mp.Pool(MAX_CONCURRENT_CONNECTIONS) as p:
+    with mp.Pool(njobs) as p:
         download_statuses = list(tqdm.tqdm(
             p.imap(download_s3_file_by_tuple_partial, s3path_download_filepath_tuples), 
             total=len(s3path_download_filepath_tuples)
         ))
-    
-
-    
-    # print(f"Successful downloads: {sum(download_successes)} / {len(download_successes)}")
     
     return download_statuses
 
