@@ -145,7 +145,9 @@ def select_s3paths_to_download(
 ):
     band_s3paths = [
         s3path for s3path in s3paths
-        if s3path.prefix.endswith('.jp2') and any(band in s3path.prefix for band in bands)
+        if s3path.prefix.endswith('.jp2') 
+        and 'IMG_DATA' in s3path.prefix 
+        and any(band in s3path.prefix for band in bands)
     ]
 
     other_s3paths = [
