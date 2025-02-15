@@ -223,9 +223,6 @@ def get_s3paths_single_url(
         satellite = satellite,
     )
 
-    for s3path in s3paths:
-        print(s3path)
-
     download_folderpath = s3url_to_download_folderpath(
         s3url = s3url,
         root_folderpath = root_folderpath,
