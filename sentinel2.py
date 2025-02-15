@@ -137,6 +137,38 @@ def s3url_to_download_folderpath(
     return download_folderpath
 
 
+def select_s3paths_to_download(
+    s3paths:list[mydataclasses.S3Path],
+    bands:list[str],
+    others:list[str],
+    satellite:str,
+):
+    band_s3paths = [
+        s3path for s3path in s3paths
+        if s3path.prefix.endswith('.jp2') and any(band in s3path.prefix for band in bands)
+    ]
+
+    other_s3paths = [
+        s3path for s3path in s3paths
+        if any(other in s3path.prefix for other in others)
+    ]
+
+    selected_band_s3path_res_dict = {}
+    if satellite == constants.Bands.S2L2A.NAME:
+        # choose the highest resolution
+        for band_s3path in band_s3paths:
+            band, res = band_s3path.prefix.split('/')[-1].split('_')[-2:]
+            if band not in selected_band_s3path_res_dict.keys():
+                selected_band_s3path_res_dict[band] = (band_s3path, res)
+            else:
+                if selected_band_s3path_res_dict[band][1] > res:
+                    selected_band_s3path_res_dict[band] = (band_s3path, res)
+        
+        band_s3paths = [v[0] for v in selected_band_s3path_res_dict.values()]
+
+    return list(set(band_s3paths + other_s3paths))
+
+
 def get_s3paths_single_url(
     s3url:str,
     s3_creds:mydataclasses.S3Credentials,
@@ -168,18 +200,6 @@ def get_s3paths_single_url(
     
     sentinel2_id = parse_s3url(s3url=s3url)['id']
 
-    filenames_to_download = [
-        get_band_filename(
-            sentinel2_id = sentinel2_id, 
-            band = band, 
-            ext = EXT_JP2,
-            add_s2l2a_suffix = add_s2l2a_suffix,
-        ) 
-        for band in bands
-    ]
-
-    filenames_to_download.append('MTD_TL.xml') # metadata file for angles information
-
     s3 = boto3.resource(
         's3',
         endpoint_url = s3_creds.endpoint_url,
@@ -191,10 +211,18 @@ def get_s3paths_single_url(
     root_s3path = utils.s3url_to_s3path(s3url=s3url)
 
     all_files = s3.Bucket(root_s3path.bucket).objects.filter(Prefix=root_s3path.prefix)
-    s3paths = [
-        mydataclasses.S3Path(bucket=file.bucket_name, prefix=file.key) for file in all_files
-        if any(file_to_download in file.key for file_to_download in set(filenames_to_download))
-    ]
+
+    s3paths = select_s3paths_to_download(
+        s3paths = [
+            mydataclasses.S3Path(bucket=file.bucket_name, prefix=file.key) for file in all_files
+        ],
+        bands = bands,
+        others = ['MTD_TL.xml'],
+        satellite = satellite,
+    )
+
+    for s3path in s3paths:
+        print(s3path)
 
     download_folderpath = s3url_to_download_folderpath(
         s3url = s3url,

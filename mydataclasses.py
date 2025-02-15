@@ -66,3 +66,6 @@ class Credentials(object):
 class S3Path:
     bucket:str
     prefix:str
+
+    def __hash__(self):
+        return hash((self.bucket, self.prefix))
