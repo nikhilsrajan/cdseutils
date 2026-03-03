@@ -16,6 +16,4 @@ free account from CDSE which is the "Copernicus General User" has monthly 30000 
 (see: https://documentation.dataspace.copernicus.eu/Quotas.html).
 """
 
-
-from . import utils
-from . import constants
+import cdseutils
