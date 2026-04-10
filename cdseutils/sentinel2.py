@@ -9,7 +9,10 @@ from . import constants
 from . import utils
 
 
-VALID_S3URL_START = 's3://EODATA/'
+VALID_S3URL_STARTS = [
+    's3://EODATA/',
+    's3://eodata/',
+]
 VALID_S3URL_END = '.SAFE/'
 EXT_JP2 = '.jp2'
 EXT_SAFE = '.SAFE'
@@ -121,9 +124,15 @@ def parse_band_filename(
 def s3url_to_download_folderpath(
     s3url:str,
     root_folderpath:str,
-):  
-    if not s3url.startswith(VALID_S3URL_START):
-        raise ValueError(f"Invalid s3url, valid s3url starts with '{VALID_S3URL_START}'")
+):
+    valid_s3_url_start = None
+    for _valid_s3_url_start in VALID_S3URL_STARTS:
+        if s3url.startswith(_valid_s3_url_start):
+            valid_s3_url_start = _valid_s3_url_start
+            break
+    
+    if valid_s3_url_start is None:
+        raise ValueError(f"Invalid s3url={s3url}, valid s3url starts with '{VALID_S3URL_STARTS}'")
     
     if not (s3url.endswith(VALID_S3URL_END) or s3url.endswith(EXT_SAFE)):
         raise ValueError(f"Invalid s3url, valid s3url ends with '{VALID_S3URL_END}' or '{EXT_SAFE}")
@@ -131,7 +140,7 @@ def s3url_to_download_folderpath(
     ends_with = VALID_S3URL_END if s3url.endswith(VALID_S3URL_END) else EXT_SAFE
     
     download_folderpath = os.path.join(
-        root_folderpath, *s3url.removeprefix(VALID_S3URL_START).removesuffix(ends_with).split('/')
+        root_folderpath, *s3url.removeprefix(valid_s3_url_start).removesuffix(ends_with).split('/')
     )
 
     return download_folderpath
@@ -178,8 +187,14 @@ def get_s3paths_single_url(
     bands:list[str],
     satellite:str = constants.Bands.S2L1C.NAME,
 ) -> tuple[list[mydataclasses.S3Path], list[str]]:
-    if not s3url.startswith(VALID_S3URL_START):
-        raise ValueError(f"Invalid s3url, valid s3url starts with '{VALID_S3URL_START}'")
+    valid_s3_url_start = None
+    for _valid_s3_url_start in VALID_S3URL_STARTS:
+        if s3url.startswith(_valid_s3_url_start):
+            valid_s3_url_start = _valid_s3_url_start
+            break
+    
+    if valid_s3_url_start is None:
+        raise ValueError(f"Invalid s3url={s3url}, valid s3url starts with '{VALID_S3URL_STARTS}'")
     
     if not (s3url.endswith(VALID_S3URL_END) or s3url.endswith(EXT_SAFE)):
         raise ValueError(f"Invalid s3url, valid s3url ends with '{VALID_S3URL_END}' or '{EXT_SAFE}")
