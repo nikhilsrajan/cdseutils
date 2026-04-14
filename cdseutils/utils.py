@@ -20,7 +20,6 @@ from . import mydataclasses
 MAX_CONCURRENT_CONNECTIONS = 4
 
 EPSG_4326 = 'epsg:4326'
-WGS_84 = 'wgs84' # same as epsg:4326 but sentinelhub raises warning for using epsg:4326
 
 
 def cdse_credentials_to_dict(
@@ -427,9 +426,8 @@ def reduce_geometries(
 def get_bbox(
     shapes_gdf:gpd.GeoDataFrame,
 ):  
-    # converting to WGS_84 since catalog search converts the bbox to 
-    # that crs before conducting search
-    reduced_shapes_gdf = reduce_geometries(shapes_gdf).to_crs(WGS_84)
+    # converting to EPSG:4326
+    reduced_shapes_gdf = reduce_geometries(shapes_gdf).to_crs(EPSG_4326)
     geom = reduced_shapes_gdf['geometry'][0]
     crs = reduced_shapes_gdf.crs
     bbox = sentinelhub.BBox(geom.bounds, crs=crs)
